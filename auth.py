@@ -1,19 +1,47 @@
 from datetime import datetime, timedelta  # для работы с временем (истечение срока действия токена)
 from typing import Optional  # чтобы указать, что параметр может быть None
+import os
 
 from jose import JWTError, jwt  # библиотека для создания и проверки JWT
 from passlib.context import CryptContext  # для безопасного хеширования паролей
 
 #секретный ключ хранится в .env файле
-SECRET_KEY = 'example_key'
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import ValidationError
+from models import User  # если есть модель User
+from schemas import TokenData  # создадим ниже
+from dotenv import load_dotenv
 
-#Алгоритм шифрования токена
-ALGORITHM = 'HS256'  
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
 #Время действия токена - по умолчанию 30
 TOKEN_EXPIRE_MINUTES = 30
 
 #контекстт для работы с хешами 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        return username
+    except (JWTError, ValidationError):
+        raise credentials_exception
+
+#Алгоритм шифрования токена
 
 #хеширование пароля
 def get_password_hash(password: str) -> str:
