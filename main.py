@@ -8,10 +8,13 @@ from auth import *  # функции из auth.py
 
 from pydantic import BaseModel  # базовый класс моделей Pydantic.
 
-Base.metadata.create_all(bind=engine)
+from routes import users  # или как у тебя назван файл
+
 app = FastAPI()
 
-shema = OAuth2PasswordBearer(tokenUrl='login')
+app.include_router(users.router)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='login')
 
 # Создает подключение к базе и закрывает после запроса 
 def get_db():
@@ -59,7 +62,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 # защищенный маршрут
 @app.get("/protected")
-def protected_root(token: str = Depends(shema)):  # сюда можно попасть еси только валидный токен (логин и пароль)
+def protected_root(token: str = Depends(oauth2_scheme)):  # сюда можно попасть еси только валидный токен (логин и пароль)
     payload = decode_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail='Невалидный токен')
