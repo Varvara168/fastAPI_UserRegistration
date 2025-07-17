@@ -1,14 +1,29 @@
-from sqlalchemy import create_engine  # создаёт подключение к БД
-from sqlalchemy.orm import sessionmaker, declarative_base  # создаёт сессии для взаимодействия с БД. базовый класс для моделей (таблиц).
+import os
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
+from dotenv import load_dotenv
 
-# Путь к базе данных (SQLALCHEMY_DATABASE_URL)
-url = "sqlite:///./users.db"
+load_dotenv()
 
-# Создание движка подключения: "check_same_thread": False - для многопотоковости
-engine = create_engine(url, connect_args={"check_same_thread": False}) 
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Сессия — рабочее подключение к базе: изменения не сохраняются автоматически. не сбрасываются автоматически перед запросами. указываем, к какой базе подключаться.
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine = create_async_engine(DATABASE_URL, echo=True)
 
-# Создание таблиц автоматически, Base — родитель для всех моделей
+SessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
+
 Base = declarative_base()
+# обязательно должно быть
+
+async_session = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
+async def get_db():
+    async with async_session() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
