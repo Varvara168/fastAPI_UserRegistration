@@ -58,4 +58,8 @@
 
 ---
 
-Если хочешь, могу помочь подробно разобрать каждый файл или написать документацию для проекта!
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+alembic revision --autogenerate -m "Add Like model"
+alembic upgrade head

@@ -1,10 +1,17 @@
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from fastapi import Form
 from typing import Optional, List
 
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
+    city: str
+    age: int
+    gender: str
+    relationship_goal: str
+    interests: List[int] = []
+
 
     @field_validator('password')
     @classmethod
@@ -59,14 +66,19 @@ class UserUpdate(BaseModel):
         return values
 
 # Базовая модель поста (используется при создании и отображении)
-class PostBase(BaseModel):
+class PostCreate(BaseModel):
     title: str
     content: str
-
-# Модель для создания поста
-class PostCreate(PostBase):
-    pass
-
+    tag_ids: List[int] = []
+    
+    @classmethod
+    def as_form(
+        cls,
+        title: str = Form(...),
+        content: str = Form(...)
+    ):
+        return cls(title=title, content=content)
+    
 class PostUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
@@ -108,7 +120,10 @@ class UserOut(BaseModel):
     id: int
     username: str
     email: EmailStr
+    city: str
+    age: int
+    gender: str
+    relationship_goal: str
     posts: List[PostOut] = []
-
     class Config:
         orm_mode = True

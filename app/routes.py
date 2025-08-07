@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request
+from fastapi import APIRouter, Depends, Query, HTTPException, Header, Request, File, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+import os
 
 from app.dependencies import get_current_user
 from app import models, schemas, auth, crud
@@ -34,17 +35,26 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @router.post("/register", response_model=schemas.UserOut)
 async def register(user: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
+    # Проверка существующего пользователя
     result = await db.execute(select(models.User).where(models.User.email == user.email))
     existing_user = result.scalars().first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # Хеширование пароля и создание пользователя
     hashed_password = auth.hash_password(user.password)
     db_user = models.User(username=user.username, email=user.email, hashed_password=hashed_password)
     db.add(db_user)
     await db.commit()
-    await db.refresh(db_user)
-    return db_user
+    await db.refresh(db_user)  # Обновить, чтобы получить db_user.id
+
+    # Повторно загружаем пользователя с постами
+    stmt = select(models.User).options(selectinload(models.User.posts)).where(models.User.id == db_user.id)
+    result = await db.execute(stmt)
+    full_user = result.scalar_one()
+
+    # Возвращаем Pydantic-схему
+    return schemas.UserOut.model_validate(full_user, from_attributes=True)
 
 
 @router.post("/login", response_model=schemas.Token)
@@ -127,7 +137,7 @@ async def get_users(
     result = await db.execute(query)
     users = result.scalars().all()
     return users
-
+ 
 #получение по id
 @router.get("/users/{user_id}", response_model=schemas.UserOut)
 async def get_user_by_id(
@@ -141,20 +151,55 @@ async def get_user_by_id(
     return user
 
 #Написание поста
+
 @router.post("/posts", response_model=schemas.PostOut)
 async def create_post(
-    post: schemas.PostCreate,
+    post: schemas.PostCreate = Depends(schemas.PostCreate.as_form),
+    uploaded_file: UploadFile = File(...),
     session: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),
 ):
-    new_post = models.Post(**post.dict(), author_id=current_user.id)
+    # Формируем безопасное имя файла
+    safe_filename = uploaded_file.filename.replace(" ", "_")
+
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    static_dir = os.path.join(BASE_DIR, "static", "app")
+    os.makedirs(static_dir, exist_ok=True)
+    file_path = os.path.join(static_dir, f"1_{safe_filename}")
+
+    try:
+        content = await uploaded_file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении файла: {e}")
+
+    # Создаём пост
+    new_post = models.Post(
+        **post.dict(exclude={"tag_ids"}),
+        author_id=current_user.id
+        # file_path=file_path,  # добавь, если есть поле в модели
+    )
+
+    # 🔥 Загружаем теги из базы и добавляем к посту
+    if post.tag_ids:
+        stmt = select(models.Tag).where(models.Tag.id.in_(post.tag_ids))
+        result = await session.execute(stmt)
+        tags = result.scalars().all()
+        new_post.tags.extend(tags)
+
     session.add(new_post)
     await session.commit()
     await session.refresh(new_post)
-    return new_post
+
+    # Явно загружаем связанные теги
+    stmt = select(models.Post).options(selectinload(models.Post.tags)).where(models.Post.id == new_post.id)
+    result = await session.execute(stmt)
+    post_with_tags = result.scalars().first()
+
+    return post_with_tags
 
 # Только для админа  alembic upgrade head
-
 @router.get("/admin/dashboard")
 async def admin_dashboard(
     current_user: models.User = Depends(get_current_user),

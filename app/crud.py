@@ -1,7 +1,8 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timedelta
 from app.models import *
-from app.schemas import UserCreate, UserUpdate, PostCreate, Post
+from app.schemas import UserCreate, UserUpdate, PostCreate
 
 async def get_users(db: AsyncSession):
     result = await db.execute(select(User))
@@ -18,17 +19,40 @@ async def create_user(db: AsyncSession, user: UserCreate):
     await db.refresh(db_user)
     return db_user
 
-async def update_user(db: AsyncSession, user_id: int, data: dict):
+
+async def create_post_with_tags(db: AsyncSession, post_data: PostCreate, user_id: int):
+    db_post = Post(
+        title=post_data.title,
+        content=post_data.content,
+        user_id=user_id,
+        created_at=datetime.utcnow()
+    )
+
+    # 🔍 Загружаем все теги по переданным id
+    if post_data.tag_ids:
+        result = await db.execute(select(Tag).where(Tag.id.in_(post_data.tag_ids)))
+        tags = result.scalars().all()
+        db_post.tags = tags
+
+    db.add(db_post)
+    await db.commit()
+    await db.refresh(db_post)
+    return db_post
+
+async def update_user(db: AsyncSession, user_id: int, data: UserUpdate):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         return None
-    for key, value in data.items():
+
+    update_data = data.dict(exclude_unset=True)
+    for key, value in update_data.items():
         setattr(user, key, value)
+
     await db.commit()
     await db.refresh(user)
     return user
-
+    
 async def soft_delete_user(session: AsyncSession, user: User):
     user.is_deleted = True
     user.deleted_at = datetime.utcnow()
@@ -39,38 +63,15 @@ async def soft_delete_user(session: AsyncSession, user: User):
             post.is_deleted = True
             post.deleted_at = datetime.utcnow()
     await session.commit()
-async def add_tag_to_post(db: AsyncSession, post_id: int, tag_id: int):
-    post = await db.get(Post, post_id)
-    tag = await db.get(Tag, tag_id)
-    post.tags.append(tag)
-    await db.commit()
-    await db.refresh(post)
-    return post
-
-# ✅ Создание нового поста
-async def create_post(db: AsyncSession, post: PostCreate, author_id: int):
-    db_post = Post(
-        title=post.title,
-        content=post.content,
-        author_id=author_id
-    )
-    db.add(db_post)
-    await db.commit()
-    await db.refresh(db_post)
-    return db_post
 
 # ✅ Получение всех активных (не удалённых) постов с пагинацией и фильтрацией
-async def get_posts(db: AsyncSession, skip: int = 0, limit: int = 10, search: str = ""):
-    stmt = (
+async def get_posts(db: AsyncSession, post_id: int):
+    result = await db.execute(
         select(Post)
-        .where(Post.is_deleted == False)
-        .filter(Post.title.ilike(f"%{search}%"))
-        .order_by(Post.id.desc())
-        .offset(skip)
-        .limit(limit)
+        .options(selectinload(Post.tags))  # обязательно загружаем теги
+        .where(Post.id == post_id)
     )
-    result = await db.execute(stmt)
-    return result.scalars().all()
+    return result.scalar_one_or_none()
 
 # ✅ Мягкое удаление поста
 async def soft_delete_post(db: AsyncSession, post_id: int):

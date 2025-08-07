@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+
 from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timedelta
 from app.models import User
-from app.schemas import UserCreate, UserRead
 from app.dependencies import get_db
 import os
 from dotenv import load_dotenv
