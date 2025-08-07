@@ -5,9 +5,9 @@ services:
     container_name: postgres-db
     restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -19,10 +19,10 @@ services:
     depends_on:
       - db
     ports:
-      - "8000:8000"
+      - "8001:8001"
     env_file:
       - .env
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
 volumes:
   pgdata:
